@@ -91,13 +91,7 @@ if Facter.value('manufacturer')
           svctag=Facter.value('serialnumber')
           request_query="?svctags=#{svctag}"
           url = "#{request_uri}#{request_query}"
-          response=open(url,"apikey" => "#{apikey}").read
-          #uri = URI(url)
-          #http = Net::HTTP.new(uri.host, uri.port)
-          #http.use_ssl = true
-          #http.verify_mode = OpenSSL::SSL::VERIFY_PEER
-          #request = Net::HTTP::Get.new(uri.request_uri)
-          #response = http.request(request)
+          response=URI.open(url,"apikey" => "#{apikey}").read
         }
 
         begin

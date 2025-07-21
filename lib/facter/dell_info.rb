@@ -3,17 +3,12 @@ require 'json'
 require 'date'
 require 'time'
 require 'net/http'
-require 'open-uri'
+require 'uri'
 
 conf_file = '/etc/dell_info.yaml'
 config = Hash.new
 
-#  URL used to query Dell's API
-#url = 'https://api.dell.com/support/v2/assetinfo/warranty/tags.json?apikey=%s&svctags=%s'
-url = 'https://api.dell.com/support/v2/assetinfo/warranty/tags.json'
 
-#  There are only three API keys at this time I think.
-apikey = '1adecee8a60444738f280aad1cd87d0e'
 dell_machine = false
 
 #  Where to store cache files.  This needs to change for windows.
@@ -52,11 +47,18 @@ if File.exists?(conf_file) then
       end
     end
   end
+else
+  Facter.debug("#{conf_file} doesn't exist")
+  Facter.add(:warranty) do
+    setcode do
+      "unknown"
+    end
+  end
+  exit
 end
 
 #  Name of cache file.  For now, unique file per serial number.
 cache_file = "#{cache_dir}/#{Facter.value('serialnumber')}.json"
-
 
 dell_cache = nil
 response = nil
@@ -86,12 +88,20 @@ if Facter.value('manufacturer')
       #url = url % [apikey, Facter.value('serialnumber')]
       begin
         Timeout::timeout(30) {
-          Facter.debug('Getting api.dell.com')
-          request_uri=url
           svctag=Facter.value('serialnumber')
-          request_query="?svctags=#{svctag}"
-          url = "#{request_uri}#{request_query}"
-          response=URI.open(url,"apikey" => "#{apikey}").read
+          Facter.debug('Getting api.dell.com')
+          uri=URI(url)
+          uri.query = URI.encode_www_form({ servicetags: svctag })
+          # Prepare HTTP request
+          http = Net::HTTP.new(uri.host, uri.port)
+          http.use_ssl = true
+
+          request = Net::HTTP::Get.new(uri)
+          request['Content-Type'] = 'application/json'
+          request['Authorization'] = "Bearer #{api_key}"
+
+          # Send request
+          response = http.request(request)
         }
 
         begin
@@ -114,7 +124,7 @@ if Facter.value('manufacturer')
 
     if defined?(dell_cache)
       begin
-        pd = dell_cache['GetAssetWarrantyResponse']['GetAssetWarrantyResult']['Response']['DellAsset']['ShipDate']
+        pd = dell_cache[0]['ShipDate']
         purchase_date = Date.parse(pd)
         Facter.add(:purchase_date) do
           setcode do
@@ -129,7 +139,7 @@ if Facter.value('manufacturer')
           end
         end
 
-        warranties = dell_cache['GetAssetWarrantyResponse']['GetAssetWarrantyResult']['Response']['DellAsset']['Warranties']['Warranty']
+        warranties = dell_cache['0']['entitlements']
         warranties = [warranties] unless warranties.is_a? Array
         covered = false
 
